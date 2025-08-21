@@ -172,29 +172,6 @@ GitHub Actionsのワークフローから手動でデプロイを実行できま
 3. 「Run workflow」をクリック
 4. 環境（staging/production）を選択して実行
 
-### ローカルからの手動デプロイ
-
-```bash
-# 1. ECRにログイン
-aws ecr get-login-password --region ap-northeast-1 | \
-  docker login --username AWS --password-stdin [YOUR_ACCOUNT_ID].dkr.ecr.ap-northeast-1.amazonaws.com
-
-# 2. Dockerイメージのビルド
-docker build -t sample-lambda-web-adapter .
-
-# 3. ECRにタグ付け
-docker tag sample-lambda-web-adapter:latest \
-  [YOUR_ACCOUNT_ID].dkr.ecr.ap-northeast-1.amazonaws.com/sample-lambda-web-adapter:latest
-
-# 4. ECRにプッシュ
-docker push [YOUR_ACCOUNT_ID].dkr.ecr.ap-northeast-1.amazonaws.com/sample-lambda-web-adapter:latest
-
-# 5. Lambda関数の更新
-aws lambda update-function-code \
-  --function-name sample-lambda-web-adapter \
-  --image-uri [YOUR_ACCOUNT_ID].dkr.ecr.ap-northeast-1.amazonaws.com/sample-lambda-web-adapter:latest
-```
-
 ### デプロイ後の確認
 
 デプロイが完了すると、API GatewayのエンドポイントURLが出力されます。
