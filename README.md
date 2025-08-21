@@ -9,7 +9,7 @@ TypeScript + Express.jsで実装されたサンプルAPIアプリケーション
 - **実行環境**: Node.js 22
 - **コンテナ**: Docker
 - **デプロイ**: AWS Lambda + API Gateway
-- **IaC**: AWS SAM
+- **CI/CD**: GitHub Actions
 - **コンテナアダプター**: AWS Lambda Web Adapter
 
 ## プロジェクト構成
@@ -22,8 +22,10 @@ TypeScript + Express.jsで実装されたサンプルAPIアプリケーション
 ├── Dockerfile            # Lambda用Dockerfile（Lambda Web Adapter対応）
 ├── Dockerfile.dev        # 開発環境用Dockerfile
 ├── docker-compose.yml    # 開発環境用Docker Compose設定
-├── template.yaml         # AWS SAMテンプレート
-├── samconfig.toml        # SAMデプロイ設定
+├── .github/
+│   └── workflows/
+│       ├── deploy.yml    # 自動デプロイワークフロー
+│       └── deploy-manual.yml # 手動デプロイワークフロー
 ├── tsconfig.json         # TypeScript設定
 ├── package.json          # Node.js依存関係
 └── README.md            # このファイル
@@ -127,50 +129,70 @@ AWS Lambda Web Adapterは、既存のHTTPサーバーアプリケーションを
 
 ### 前提条件
 
-1. AWS CLIの設定
-```bash
-aws configure
-```
+1. GitHubリポジトリの設定
+   - リポジトリのSecretsに`AWS_ROLE_ARN`を設定（GitHub Actions用のIAMロール）
+   - AWSアカウントでOIDCプロバイダーとIAMロールを設定
 
-2. SAM CLIのインストール
-```bash
-# macOS
-brew install aws-sam-cli
+2. AWSリソースの事前準備
+   - ECRリポジトリの作成
+   - Lambda関数の作成（初回のみ）
 
-# その他のOS
-# https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html
-```
-
-3. ECRリポジトリの作成
 ```bash
+# ECRリポジトリの作成
 aws ecr create-repository --repository-name sample-lambda-web-adapter --region ap-northeast-1
+
+# Lambda関数の作成（初回のみ）
+aws lambda create-function \
+  --function-name sample-lambda-web-adapter \
+  --role arn:aws:iam::[YOUR_ACCOUNT_ID]:role/lambda-execution-role \
+  --code ImageUri=[YOUR_ACCOUNT_ID].dkr.ecr.ap-northeast-1.amazonaws.com/sample-lambda-web-adapter:latest \
+  --package-type Image \
+  --timeout 30 \
+  --memory-size 512 \
+  --region ap-northeast-1
 ```
 
-### デプロイ手順
+### GitHub Actionsによる自動デプロイ
 
-1. ECRにログイン
+#### mainブランチへのプッシュ時の自動デプロイ
+
+mainブランチにコードがプッシュされると、自動的にLambda関数がデプロイされます。
+
+```yaml
+# .github/workflows/deploy.yml
+# mainブランチへのプッシュで自動実行
+```
+
+#### 手動デプロイ
+
+GitHub Actionsのワークフローから手動でデプロイを実行できます。
+
+1. GitHubリポジトリの「Actions」タブを開く
+2. 「Manual Deploy Lambda Function」ワークフローを選択
+3. 「Run workflow」をクリック
+4. 環境（staging/production）を選択して実行
+
+### ローカルからの手動デプロイ
+
 ```bash
-aws ecr get-login-password --region ap-northeast-1 | docker login --username AWS --password-stdin [YOUR_ACCOUNT_ID].dkr.ecr.ap-northeast-1.amazonaws.com
-```
+# 1. ECRにログイン
+aws ecr get-login-password --region ap-northeast-1 | \
+  docker login --username AWS --password-stdin [YOUR_ACCOUNT_ID].dkr.ecr.ap-northeast-1.amazonaws.com
 
-2. samconfig.tomlのECRリポジトリURIを更新
-```toml
-image_repositories = ["SampleApiFunction=[YOUR_ACCOUNT_ID].dkr.ecr.ap-northeast-1.amazonaws.com/sample-lambda-web-adapter"]
-```
+# 2. Dockerイメージのビルド
+docker build -t sample-lambda-web-adapter .
 
-3. SAMビルド
-```bash
-sam build
-```
+# 3. ECRにタグ付け
+docker tag sample-lambda-web-adapter:latest \
+  [YOUR_ACCOUNT_ID].dkr.ecr.ap-northeast-1.amazonaws.com/sample-lambda-web-adapter:latest
 
-4. SAMデプロイ（初回）
-```bash
-sam deploy --guided
-```
+# 4. ECRにプッシュ
+docker push [YOUR_ACCOUNT_ID].dkr.ecr.ap-northeast-1.amazonaws.com/sample-lambda-web-adapter:latest
 
-5. 2回目以降のデプロイ
-```bash
-sam deploy
+# 5. Lambda関数の更新
+aws lambda update-function-code \
+  --function-name sample-lambda-web-adapter \
+  --image-uri [YOUR_ACCOUNT_ID].dkr.ecr.ap-northeast-1.amazonaws.com/sample-lambda-web-adapter:latest
 ```
 
 ### デプロイ後の確認
@@ -185,10 +207,14 @@ curl https://[API_ID].execute-api.ap-northeast-1.amazonaws.com/health
 curl https://[API_ID].execute-api.ap-northeast-1.amazonaws.com/api/sample
 ```
 
-## スタックの削除
+## リソースの削除
 
 ```bash
-sam delete
+# Lambda関数の削除
+aws lambda delete-function --function-name sample-lambda-web-adapter
+
+# ECRリポジトリの削除（イメージも含めて削除）
+aws ecr delete-repository --repository-name sample-lambda-web-adapter --force
 ```
 
 ## トラブルシューティング
@@ -211,6 +237,7 @@ sam delete
 ## リソース
 
 - [AWS Lambda Web Adapter](https://github.com/awslabs/aws-lambda-web-adapter)
-- [AWS SAM Documentation](https://docs.aws.amazon.com/serverless-application-model/)
+- [GitHub Actions aws-lambda-deploy](https://github.com/aws-actions/aws-lambda-deploy)
+- [GitHub Actions Configure AWS Credentials](https://github.com/aws-actions/configure-aws-credentials)
 - [Express.js Documentation](https://expressjs.com/)
 - [TypeScript Documentation](https://www.typescriptlang.org/)
